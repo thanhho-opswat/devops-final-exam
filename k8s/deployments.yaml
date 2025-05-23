@@ -1,0 +1,336 @@
+# Proxy Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxy
+  template:
+    metadata:
+      labels:
+        app: proxy
+    spec:
+      containers:
+      - name: proxy
+        image: ngocthanhho/go-coffeeshop-proxy:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: APP_NAME
+          value: thanhho-proxy
+        - name: GRPC_PRODUCT_HOST
+          value: product
+        - name: GRPC_PRODUCT_PORT
+          value: "5001"
+        - name: GRPC_COUNTER_HOST
+          value: counter
+        - name: GRPC_COUNTER_PORT
+          value: "5002"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy
+spec:
+  selector:
+    app: proxy
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: proxy-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: proxy
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+# Counter Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: counter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: counter
+  template:
+    metadata:
+      labels:
+        app: counter
+    spec:
+      containers:
+      - name: counter
+        image: ngocthanhho/go-coffeeshop-counter:latest
+        ports:
+        - containerPort: 5002
+        env:
+        - name: PRODUCT_CLIENT_URL
+          value: product:5001
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5002
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5002
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: counter
+spec:
+  selector:
+    app: counter
+  ports:
+    - protocol: TCP
+      port: 5002
+      targetPort: 5002
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: counter-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: counter
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+# Barista Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barista
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: barista
+  template:
+    metadata:
+      labels:
+        app: barista
+    spec:
+      containers:
+      - name: barista
+        image: ngocthanhho/go-coffeeshop-barista:latest
+        ports:
+        - containerPort: 7001
+        env:
+        - name: APP_NAME
+          value: thanhho-barista
+        - name: IN_DOCKER
+          value: "true"
+        - name: PG_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: PG_URL
+        - name: PG_DSN_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: PG_DSN_URL
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: RABBITMQ_URL
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product
+spec:
+  selector:
+    app: product
+  ports:
+    - protocol: TCP
+      port: 5001
+      targetPort: 5001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: barista
+spec:
+  selector:
+    app: barista
+  ports:
+    - protocol: TCP
+      port: 7001
+      targetPort: 7001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kitchen
+spec:
+  selector:
+    app: kitchen
+  ports:
+    - protocol: TCP
+      port: 7002
+      targetPort: 7002
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: barista-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: barista
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+# Kitchen Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kitchen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitchen
+  template:
+    metadata:
+      labels:
+        app: kitchen
+    spec:
+      containers:
+      - name: kitchen
+        image: ngocthanhho/go-coffeeshop-kitchen:latest
+        ports:
+        - containerPort: 7002
+        env:
+        - name: APP_NAME
+          value: thanhho-kitchen
+        - name: IN_DOCKER
+          value: "true"
+        - name: PG_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: PG_URL
+        - name: PG_DSN_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: PG_DSN_URL
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: RABBITMQ_URL
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7002
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7002
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kitchen
+spec:
+  selector:
+    app: kitchen
+  ports:
+    - protocol: TCP
+      port: 7002
+      targetPort: 7002
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kitchen-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kitchen
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

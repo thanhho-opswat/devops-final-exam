@@ -1,0 +1,95 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: thanhho_coffeeshop
+      POSTGRES_USER: thanhho_admin
+      POSTGRES_PASSWORD: thanhho_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3.11-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: thanhho_rmq
+      RABBITMQ_DEFAULT_PASS: thanhho_rmq_secret
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  product:
+    image: ngocthanhho/go-coffeeshop-product:latest
+    environment:
+      POSTGRES_DB: thanhho_coffeeshop
+      POSTGRES_USER: thanhho_admin
+      POSTGRES_PASSWORD: thanhho_secret
+      RABBITMQ_DEFAULT_USER: thanhho_rmq
+      RABBITMQ_DEFAULT_PASS: thanhho_rmq_secret
+    ports:
+      - "5001:5001"
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  counter:
+    image: ngocthanhho/go-coffeeshop-counter:latest
+    environment:
+      PRODUCT_CLIENT_URL: product:5001
+    ports:
+      - "5002:5002"
+    depends_on:
+      - product
+
+  proxy:
+    image: ngocthanhho/go-coffeeshop-proxy:latest
+    environment:
+      APP_NAME: thanhho-proxy
+      GRPC_PRODUCT_HOST: product
+      GRPC_PRODUCT_PORT: 5001
+      GRPC_COUNTER_HOST: counter
+      GRPC_COUNTER_PORT: 5002
+    ports:
+      - "5000:5000"
+    depends_on:
+      - product
+      - counter
+
+  barista:
+    image: ngocthanhho/go-coffeeshop-barista:latest
+    environment:
+      APP_NAME: thanhho-barista
+      IN_DOCKER: "true"
+      PG_URL: postgres://thanhho_admin:thanhho_secret@postgres:5432/thanhho_coffeeshop?sslmode=disable
+      PG_DSN_URL: host=postgres user=thanhho_admin password=thanhho_secret dbname=thanhho_coffeeshop sslmode=disable
+      RABBITMQ_URL: amqp://thanhho_rmq:thanhho_rmq_secret@rabbitmq:5672/
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  kitchen:
+    image: ngocthanhho/go-coffeeshop-kitchen:latest
+    environment:
+      APP_NAME: thanhho-kitchen
+      IN_DOCKER: "true"
+      PG_URL: postgres://thanhho_admin:thanhho_secret@postgres:5432/thanhho_coffeeshop?sslmode=disable
+      PG_DSN_URL: host=postgres user=thanhho_admin password=thanhho_secret dbname=thanhho_coffeeshop sslmode=disable
+      RABBITMQ_URL: amqp://thanhho_rmq:thanhho_rmq_secret@rabbitmq:5672/
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  web:
+    image: ngocthanhho/go-coffeeshop-web:latest
+    environment:
+      REVERSE_PROXY_URL: proxy:5000
+      WEB_PORT: 8888
+    ports:
+      - "8888:8888"
+    depends_on:
+      - proxy
+
+volumes:
+  pgdata:
